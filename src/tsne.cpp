@@ -41,12 +41,62 @@
 #include "vptree.h"
 #include "sptree.h"
 #include "tsne.h"
+#include "unistd.h"
+#include <iostream>
+#include <fstream>
+#include <string>
+#include <vector>
 
 
 using namespace std;
 
+bool saveArray(const double* pdata, size_t length, const string& file_path )
+{
+    ofstream os(file_path.c_str(), ios::binary | ios::out);
+    if ( !os.is_open() )
+        return false;
+    os.write(reinterpret_cast<const char*>(pdata), streamsize(length*sizeof(double)));
+    os.close();
+    return true;
+}
+
+bool loadArray(double* pdata, size_t length, const string& file_path)
+{
+    ifstream is(file_path.c_str(), ios::binary | ios::in);
+    if ( !is.is_open() )
+        return false;
+    is.read(reinterpret_cast<char*>(pdata), streamsize(length*sizeof(double)));
+    is.close();
+    return true;
+}
+
+bool saveArray(const unsigned int* pdata, size_t length, const string& file_path )
+{
+    ofstream os(file_path.c_str(), ios::binary | ios::out);
+    if ( !os.is_open() )
+        return false;
+    os.write(reinterpret_cast<const char*>(pdata), streamsize(length*sizeof(unsigned int)));
+    os.close();
+    return true;
+}
+
+bool loadArray(unsigned int* pdata, size_t length, const std::string& file_path)
+{
+    ifstream is(file_path.c_str(), ios::binary | ios::in);
+    if ( !is.is_open() )
+        return false;
+    is.read(reinterpret_cast<char*>(pdata), streamsize(length*sizeof(unsigned int)));
+    is.close();
+    return true;
+}
+
+bool fexists(const std::string& filename) {
+    ifstream ifile(filename.c_str());
+    return (bool)ifile;
+}
+
 // Perform t-SNE
-void TSNE::run(double* X, int N, int D, double* Y, int no_dims, double perplexity, double theta, int rand_seed, bool skip_random_init) {
+void TSNE::run(double* X, string dataName, int N, int D, double* Y, int no_dims, double perplexity, double theta, int rand_seed, bool skip_random_init) {
 
     // Set random seed
     if (skip_random_init != true) {
@@ -58,6 +108,8 @@ void TSNE::run(double* X, int N, int D, double* Y, int no_dims, double perplexit
           srand(time(NULL));
       }
     }
+
+    cout << dataName << endl;
 
     // Determine whether we are using an exact algorithm
     if(N - 1 < 3 * perplexity) { printf("Perplexity too large for the number of data points!\n"); exit(1); }
@@ -118,21 +170,41 @@ void TSNE::run(double* X, int N, int D, double* Y, int no_dims, double perplexit
 
     // Compute input similarities for approximate t-SNE
     else {
+        if(fexists(dataName + "_col_P")) {
+            // file exists
+            int K = (int) (3 * perplexity);
+            row_P = (unsigned int*)    malloc((N + 1) * sizeof(unsigned int));
+            loadArray(row_P, N+1, dataName + "_row_P");
 
-        // Compute asymmetric pairwise input similarities
-        computeGaussianPerplexity(X, N, D, &row_P, &col_P, &val_P, perplexity, (int) (3 * perplexity));
+            col_P = (unsigned int*)    malloc(row_P[N] * sizeof(unsigned int));
+            val_P = (double*) malloc(row_P[N] * sizeof(double));
+            loadArray(col_P, row_P[N], dataName + "_col_P" );
+            loadArray(val_P, row_P[N], dataName + "_val_P");
 
-        // Symmetrize input similarities
-        symmetrizeMatrix(&row_P, &col_P, &val_P, N);
-        double sum_P = .0;
-        for(int i = 0; i < row_P[N]; i++) sum_P += val_P[i];
-        for(int i = 0; i < row_P[N]; i++) val_P[i] /= sum_P;
+        } else {
+            // file doesn't exist
+            // Compute asymmetric pairwise input similarities
+            computeGaussianPerplexity(X, N, D, &row_P, &col_P, &val_P, perplexity, (int) (3 * perplexity));
+
+            // Symmetrize input similarities
+            symmetrizeMatrix(&row_P, &col_P, &val_P, N);
+            double sum_P = .0;
+            for(int i = 0; i < row_P[N]; i++) sum_P += val_P[i];
+            for(int i = 0; i < row_P[N]; i++) val_P[i] /= sum_P;
+
+            saveArray(row_P, N+1, dataName + "_row_P");
+            saveArray(col_P, row_P[N], dataName + "_col_P");
+            saveArray(val_P, row_P[N], dataName + "_val_P");
+        }
     }
     end = clock();
-
     // Lie about the P-values
     if(exact) { for(int i = 0; i < N * N; i++)        P[i] *= 12.0; }
-    else {      for(int i = 0; i < row_P[N]; i++) val_P[i] *= 12.0; }
+    else {
+        for(int i = 0; i < row_P[N]; i++)  {
+            val_P[i] *= 12.0;
+        }
+    }
 
 	// Initialize solution (randomly)
   if (skip_random_init != true) {
@@ -603,37 +675,45 @@ void TSNE::symmetrizeMatrix(unsigned int** _row_P, unsigned int** _col_P, double
 
 // Compute squared Euclidean distance matrix (using BLAS)
 void TSNE::computeSquaredEuclideanDistance(double* X, int N, int D, double* DD) {
-    double* dataSums = (double*) calloc(N, sizeof(double));
-    if(dataSums == NULL) { printf("Memory allocation failed!\n"); exit(1); }
-    int nD = 0;
-    for(int n = 0; n < N; n++) {
-        for(int d = 0; d < D; d++) {
-            dataSums[n] += (X[nD + d] * X[nD + d]);
-        }
-        nD += D;
-    }
-    int nN = 0;
-    for(int n = 0; n < N; n++) {
-        for(int m = 0; m < N; m++) {
-            DD[nN + m] = dataSums[n] + dataSums[m];
-        }
-        nN += N;
-    }
-    nN = 0; nD = 0;
-    for(int n = 0; n < N; n++) {
-        int mD = 0;
-        DD[nN + n] = 0.0;
-        for(int m = n + 1; m < N; m++) {
-            DD[nN + m] = 0.0;
+
+    if(access("matrix.dat", F_OK) != -1) {
+        // file exists
+        saveArray(DD, N*N, "matrix");
+    } else {
+        //file doesn't exist
+        double* dataSums = (double*) calloc(N, sizeof(double));
+        if(dataSums == NULL) { printf("Memory allocation failed!\n"); exit(1); }
+        int nD = 0;
+        for(int n = 0; n < N; n++) {
             for(int d = 0; d < D; d++) {
-                DD[nN + m] += (X[nD + d] - X[mD + d]) * (X[nD + d] - X[mD + d]);
+                dataSums[n] += (X[nD + d] * X[nD + d]);
             }
-            DD[m * N + n] = DD[nN + m];
-            mD += D;
+            nD += D;
         }
-        nN += N; nD += D;
+        int nN = 0;
+        for(int n = 0; n < N; n++) {
+            for(int m = 0; m < N; m++) {
+                DD[nN + m] = dataSums[n] + dataSums[m];
+            }
+            nN += N;
+        }
+        nN = 0; nD = 0;
+        for(int n = 0; n < N; n++) {
+            int mD = 0;
+            DD[nN + n] = 0.0;
+            for(int m = n + 1; m < N; m++) {
+                DD[nN + m] = 0.0;
+                for(int d = 0; d < D; d++) {
+                    DD[nN + m] += (X[nD + d] - X[mD + d]) * (X[nD + d] - X[mD + d]);
+                }
+                DD[m * N + n] = DD[nN + m];
+                mD += D;
+            }
+            nN += N; nD += D;
+        }
+        free(dataSums); dataSums = NULL;
+        saveArray(DD, N*N, "matrix");
     }
-    free(dataSums); dataSums = NULL;
 }
 
 
@@ -722,7 +802,6 @@ void TSNE::save_data(double* data, int* landmarks, double* costs, int n, int d) 
 	printf("Wrote the %i x %i data matrix successfully!\n", n, d);
 }
 
-
 // Function that runs the Barnes-Hut implementation of t-SNE
 int main() {
 
@@ -746,7 +825,7 @@ int main() {
 		double* Y = (double*) malloc(N * no_dims * sizeof(double));
 		double* costs = (double*) calloc(N, sizeof(double));
         if(Y == NULL || costs == NULL) { printf("Memory allocation failed!\n"); exit(1); }
-		tsne->run(data, N, D, Y, no_dims, perplexity, theta, rand_seed, false);
+		tsne->run(data, "data", N, D, Y, no_dims, perplexity, theta, rand_seed, false);
 
 		// Save the results
 		tsne->save_data(Y, landmarks, costs, N, no_dims);
