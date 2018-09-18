@@ -52,13 +52,13 @@ public:
 
 private:
     void computeGradient(double* P, unsigned int* inp_row_P, unsigned int* inp_col_P, double* inp_val_P, double* Y, int N, int D, double* dC, double theta);
-    void computeExactGradient(double* P, double* Y, int N, int D, double* dC);
-    double evaluateError(double* P, double* Y, int N, int D);
+    void computeExactGradient(double* P, double* Y, int N, int D, double* dC, string dataName);
+    double evaluateError(double* P, double* Y, int N, int D, string dataName);
     double evaluateError(unsigned int* row_P, unsigned int* col_P, double* val_P, double* Y, int N, int D, double theta);
     void zeroMean(double* X, int N, int D);
-    void computeGaussianPerplexity(double* X, int N, int D, double* P, double perplexity);
+    void computeGaussianPerplexity(double* X, int N, int D, double* P, double perplexity, string dataName);
     void computeGaussianPerplexity(double* X, int N, int D, unsigned int** _row_P, unsigned int** _col_P, double** _val_P, double perplexity, int K);
-    void computeSquaredEuclideanDistance(double* X, int N, int D, double* DD);
+    void computeSquaredEuclideanDistance(double* X, int N, int D, double* DD, string dataName);
     double randn();
 };
 

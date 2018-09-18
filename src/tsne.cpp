@@ -149,7 +149,7 @@ void TSNE::run(double* X, string dataName, int N, int D, double* Y, int no_dims,
         printf("Exact?");
         P = (double*) malloc(N * N * sizeof(double));
         if(P == NULL) { printf("Memory allocation failed!\n"); exit(1); }
-        computeGaussianPerplexity(X, N, D, P, perplexity);
+        computeGaussianPerplexity(X, N, D, P, perplexity, dataName);
 
         // Symmetrize input similarities
         printf("Symmetrizing...\n");
@@ -219,7 +219,7 @@ void TSNE::run(double* X, string dataName, int N, int D, double* Y, int no_dims,
 	for(int iter = 0; iter < max_iter; iter++) {
 
         // Compute (approximate) gradient
-        if(exact) computeExactGradient(P, Y, N, no_dims, dY);
+        if(exact) computeExactGradient(P, Y, N, no_dims, dY, dataName);
         else computeGradient(P, row_P, col_P, val_P, Y, N, no_dims, dY, theta);
 
         // Update gains
@@ -245,7 +245,7 @@ void TSNE::run(double* X, string dataName, int N, int D, double* Y, int no_dims,
         if (iter > 0 && (iter % 50 == 0 || iter == max_iter - 1)) {
             end = clock();
             double C = .0;
-            if(exact) C = evaluateError(P, Y, N, no_dims);
+            if(exact) C = evaluateError(P, Y, N, no_dims, dataName);
             else      C = evaluateError(row_P, col_P, val_P, Y, N, no_dims, theta);  // doing approximate computation here!
             if(iter == 0)
                 printf("Iteration %d: error is %f\n", iter + 1, C);
@@ -297,7 +297,7 @@ void TSNE::computeGradient(double* P, unsigned int* inp_row_P, unsigned int* inp
 }
 
 // Compute gradient of the t-SNE cost function (exact)
-void TSNE::computeExactGradient(double* P, double* Y, int N, int D, double* dC) {
+void TSNE::computeExactGradient(double* P, double* Y, int N, int D, double* dC, string dataName) {
 
 	// Make sure the current gradient contains zeros
 	for(int i = 0; i < N * D; i++) dC[i] = 0.0;
@@ -305,7 +305,7 @@ void TSNE::computeExactGradient(double* P, double* Y, int N, int D, double* dC) 
     // Compute the squared Euclidean distance matrix
     double* DD = (double*) malloc(N * N * sizeof(double));
     if(DD == NULL) { printf("Memory allocation failed!\n"); exit(1); }
-    computeSquaredEuclideanDistance(Y, N, D, DD);
+    computeSquaredEuclideanDistance(Y, N, D, DD, dataName);
 
     // Compute Q-matrix and normalization sum
     double* Q    = (double*) malloc(N * N * sizeof(double));
@@ -347,13 +347,13 @@ void TSNE::computeExactGradient(double* P, double* Y, int N, int D, double* dC) 
 
 
 // Evaluate t-SNE cost function (exactly)
-double TSNE::evaluateError(double* P, double* Y, int N, int D) {
+double TSNE::evaluateError(double* P, double* Y, int N, int D, string dataName) {
 
     // Compute the squared Euclidean distance matrix
     double* DD = (double*) malloc(N * N * sizeof(double));
     double* Q = (double*) malloc(N * N * sizeof(double));
     if(DD == NULL || Q == NULL) { printf("Memory allocation failed!\n"); exit(1); }
-    computeSquaredEuclideanDistance(Y, N, D, DD);
+    computeSquaredEuclideanDistance(Y, N, D, DD, dataName);
 
     // Compute Q-matrix and normalization sum
     int nN = 0;
@@ -416,12 +416,12 @@ double TSNE::evaluateError(unsigned int* row_P, unsigned int* col_P, double* val
 
 
 // Compute input similarities with a fixed perplexity
-void TSNE::computeGaussianPerplexity(double* X, int N, int D, double* P, double perplexity) {
+void TSNE::computeGaussianPerplexity(double* X, int N, int D, double* P, double perplexity, string dataName) {
 
 	// Compute the squared Euclidean distance matrix
 	double* DD = (double*) malloc(N * N * sizeof(double));
     if(DD == NULL) { printf("Memory allocation failed!\n"); exit(1); }
-	computeSquaredEuclideanDistance(X, N, D, DD);
+	computeSquaredEuclideanDistance(X, N, D, DD, dataName);
 
 	// Compute the Gaussian kernel row by row
     int nN = 0;
@@ -674,11 +674,11 @@ void TSNE::symmetrizeMatrix(unsigned int** _row_P, unsigned int** _col_P, double
 }
 
 // Compute squared Euclidean distance matrix (using BLAS)
-void TSNE::computeSquaredEuclideanDistance(double* X, int N, int D, double* DD) {
+void TSNE::computeSquaredEuclideanDistance(double* X, int N, int D, double* DD, string dataName) {
 
-    if(access("matrix.dat", F_OK) != -1) {
+    if(fexists(dataName + "_matrix")) {
         // file exists
-        saveArray(DD, N*N, "matrix");
+        loadArray(DD, N*N, dataName + "_matrix");
     } else {
         //file doesn't exist
         double* dataSums = (double*) calloc(N, sizeof(double));
@@ -712,7 +712,7 @@ void TSNE::computeSquaredEuclideanDistance(double* X, int N, int D, double* DD) 
             nN += N; nD += D;
         }
         free(dataSums); dataSums = NULL;
-        saveArray(DD, N*N, "matrix");
+        saveArray(DD, N*N, dataName + "_matrix");
     }
 }
 
